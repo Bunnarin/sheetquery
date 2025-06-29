@@ -123,7 +123,7 @@ class SheetQueryBuilder {
    * @returns {any[]}
    */
   getCells() {
-    const rows = this.getTable();
+    const rows = this.getRows();
     const returnValues = [];
     rows.forEach((row) => {
       returnValues.push(this._sheet.getRange(row.__meta.row, 1, 1, row.__meta.cols).getValue());
@@ -185,7 +185,7 @@ class SheetQueryBuilder {
    * @return {SheetQueryBuilder}
    */
   deleteRows() {
-    const rows = this.getTable();
+    const rows = this.getRows();
     let i = 0;
     rows.forEach((row) => {
       const deleteRowRange = this._sheet.getRange(row.__meta.row - i, 1, 1, row.__meta.cols);
@@ -203,7 +203,7 @@ class SheetQueryBuilder {
    */
   updateRows(updateFn, safe = false) {
     updateFn = (typeof updateFn == 'object') ? update_fn(updateFn) : updateFn;
-    const rows = this.getTable();
+    const rows = this.getRows();
     if (rows.length == 0)
       throw new Error('filter function did not match anything');
     for (let i = 0; i < rows.length; i++) 
