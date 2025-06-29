@@ -41,7 +41,7 @@ class SheetQueryBuilder {
    * @return {SheetQueryBuilder}
    */
   where(fn) {
-    fn = (typeof fn == 'object') ? create_fn(fn, false) : fn;
+    fn = (typeof fn == 'object') ? filter_fn(fn) : fn;
     this.whereFn = fn;
     return this;
   }
@@ -84,11 +84,20 @@ class SheetQueryBuilder {
     return this._sheetValues;
   }
   /**
-   * Return matching rows from sheet query
+   * Return matching rows from sheet query excluding the header row
    *
    * @return {RowObject[]}
    */
   getRows() {
+    const sheetValues = this.getValues().slice(1, -1);
+    return this.whereFn ? sheetValues.filter(this.whereFn) : sheetValues;
+  }
+  /**
+   * Return matching rows from sheet query including the header row
+   *
+   * @return {RowObject[]}
+   */
+  getTable() {
     const sheetValues = this.getValues();
     return this.whereFn ? sheetValues.filter(this.whereFn) : sheetValues;
   }
@@ -114,7 +123,7 @@ class SheetQueryBuilder {
    * @returns {any[]}
    */
   getCells() {
-    const rows = this.getRows();
+    const rows = this.getTable();
     const cellArray = [];
     rows.forEach((row) => {
       cellArray.push(this._sheet.getRange(row.__meta.row, 1, 1, row.__meta.cols));
@@ -128,7 +137,7 @@ class SheetQueryBuilder {
    * @returns {any[]} all the colum cells from the query's rows
    */
   getCellsWithHeadings(key, headings) {
-    let rows = this.getRows();
+    let rows = this.getTable();
     let indexColumn = 1;
     const arrayCells = [];
     for (const elem of this._sheetHeadings) {
@@ -182,7 +191,7 @@ class SheetQueryBuilder {
    * @return {SheetQueryBuilder}
    */
   deleteRows() {
-    const rows = this.getRows();
+    const rows = this.getTable();
     let i = 0;
     rows.forEach((row) => {
       const deleteRowRange = this._sheet.getRange(row.__meta.row - i, 1, 1, row.__meta.cols);
@@ -199,8 +208,8 @@ class SheetQueryBuilder {
    * @return {SheetQueryBuilder}
    */
   updateRows(updateFn) {
-    updateFn = (typeof updateFn == 'object') ? create_fn(updateFn, true) : updateFn;
-    const rows = this.getRows();
+    updateFn = (typeof updateFn == 'object') ? update_fn(updateFn) : updateFn;
+    const rows = this.getTable();
     for (let i = 0; i < rows.length; i++) {
       this.updateRow(rows[i], updateFn);
     }
@@ -211,7 +220,7 @@ class SheetQueryBuilder {
    * Update single row
    */
   updateRow(row, updateFn) {
-    fn = (typeof updateFn == 'object') ? create_fn(fn, true) : fn;
+    updateFn = (typeof updateFn == 'object') ? update_fn(updateFn) : updateFn;
     const updatedRow = updateFn(row) || row;
     const rowMeta = updatedRow.__meta;
     const headings = this.getHeadings();
@@ -246,15 +255,14 @@ class SheetQueryBuilder {
 }
 
 // util
-function create_fn(objHash, update = true) {
-  const operator = update ? '=' : '==';
+function update_fn(updateHash) {
   let functionBody = '';
 
-  // Iterate over the keys in the objHash
-  for (const key in objHash) {
+  // Iterate over the keys in the updateHash
+  for (const key in updateHash) {
     // Ensure it's an own property, not inherited
-    if (Object.prototype.hasOwnProperty.call(objHash, key)) {
-      const value = objHash[key];
+    if (Object.prototype.hasOwnProperty.call(updateHash, key)) {
+      const value = updateHash[key];
 
       // Dynamically format the value correctly for inclusion in the function string.
       // Strings need to be quoted, numbers/booleans/null/undefined can be inserted directly.
@@ -272,10 +280,25 @@ function create_fn(objHash, update = true) {
       }
 
       // Add the assignment statement to the function body
-      functionBody += `  row["${key}"] ${operator} ${formattedValue};\n`;
+      functionBody += `  row["${key}"] = ${formattedValue};\n`;
     }
   }
 
   // Construct the anonymous function using new Function().
+  return new Function('row', functionBody);
+}
+
+function filter_fn(filterHash) {
+  const conditions = [];
+  for (const key in filterHash) {
+    if (Object.prototype.hasOwnProperty.call(filterHash, key)) {
+      const value = filterHash[key];
+      // Escape string values for proper inclusion in the function string
+      const escapedValue = typeof value === 'string' ? `'${value.replace(/'/g, "\\'")}'` : value;
+      conditions.push(`row["${key}"] === ${escapedValue}`);
+    }
+  }
+
+  const functionBody = `return ${conditions.join(' && ')};`;
   return new Function('row', functionBody);
 }
