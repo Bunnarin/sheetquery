@@ -124,41 +124,35 @@ class SheetQueryBuilder {
    */
   getCells() {
     const rows = this.getTable();
-    const cellArray = [];
+    const returnValues = [];
     rows.forEach((row) => {
-      cellArray.push(this._sheet.getRange(row.__meta.row, 1, 1, row.__meta.cols));
+      returnValues.push(this._sheet.getRange(row.__meta.row, 1, 1, row.__meta.cols).getValue());
     });
-    return cellArray;
+    return returnValues;
   }
   /**
    * Get cells in sheet from current query + where condition and from specific header
    * @param {string} key name of the column
-   * @param {Array<string>} [keys] optionnal names of columns use to select more columns than one
    * @returns {any[]} all the colum cells from the query's rows
    */
-  getCellsWithHeadings(key, headings) {
-    let rows = this.getTable();
+  getAllByCol(key) {
+    const cells = [];
+    let rows = this.getRows();
     let indexColumn = 1;
-    const arrayCells = [];
+    let found = false;
     for (const elem of this._sheetHeadings) {
-      if (elem == key) break;
+      if (elem == key) {
+        found = true;
+        break;
+      }
       indexColumn++;
     }
+    if (!found) 
+      throw new Error(`no col found with ${key}`);
     rows.forEach((row) => {
-      arrayCells.push(this._sheet.getRange(row.__meta.row, indexColumn));
+      cells.push(this._sheet.getRange(row.__meta.row, indexColumn).getValue());
     });
-    //If we got more thant one param
-    headings.forEach((col) => {
-      let indexColumn = 1;
-      for (const elem of this._sheetHeadings) {
-        if (elem == col) break;
-        indexColumn++;
-      }
-      rows.forEach((row) => {
-        arrayCells.push(this._sheet.getRange(row.__meta.row, indexColumn));
-      });
-    });
-    return arrayCells;
+    return cells;
   }
   /**
    * Insert new rows into the spreadsheet
@@ -207,12 +201,16 @@ class SheetQueryBuilder {
    * @param {UpdateFn} updateFn
    * @return {SheetQueryBuilder}
    */
-  updateRows(updateFn) {
+  updateRows(updateFn, safe = false) {
     updateFn = (typeof updateFn == 'object') ? update_fn(updateFn) : updateFn;
     const rows = this.getTable();
-    for (let i = 0; i < rows.length; i++) {
-      this.updateRow(rows[i], updateFn);
-    }
+    if (rows.length == 0)
+      throw new Error('filter function did not match anything');
+    for (let i = 0; i < rows.length; i++) 
+      if (safe)
+        this.updateRowSafe(rows[i], updateFn);
+      else
+        this.updateRow(rows[i], updateFn);
     this.clearCache();
     return this;
   }
@@ -242,11 +240,71 @@ class SheetQueryBuilder {
     return this;
   }
   /**
+   * Updates specific cells in a row without implicitly overriding other cell values or formulas.
+   * @param {object} row The row object (from getRows()) containing __meta and column data.
+   * @param {object|function(object): object} updateFn An object with key-value pairs for updates,
+   * @return {SheetQueryBuilder}
+   */
+  updateRowSafe(row, updateFn) {
+    updateFn = (typeof updateFn == 'object') ? update_fn(updateFn) : updateFn;
+
+    const sheet = this.getSheet();
+    const headings = this.getHeadings();
+    const rowMeta = row.__meta;
+    const oldRow = {...row};
+    updateFn(row);
+    delete row.__meta;
+
+    // Iterate over the keys (column names) in the updatedRow object
+    for (const columnName in row) {
+      if (row[columnName] == oldRow[columnName])
+        continue;
+        
+      const newValue = row[columnName];
+      const columnIndex = headings.indexOf(columnName);
+      if (columnIndex === -1) 
+        throw new Error(`${columnName} not found`)
+      const targetCell = sheet.getRange(rowMeta.row, columnIndex + 1);
+      const valueToSet = (newValue === undefined || newValue === null || newValue === false) ? '' : newValue;
+      targetCell.setValue(valueToSet);
+    }
+    return this;
+  }
+  /**
+   * Sets all values in a specified column by its name.
+   *
+   * @param {string} columnName The name of the column to update.
+   * @param {any} value The single value to set for all cells in the column.
+   * @return {SheetQueryBuilder}
+   */
+  setColumnValues(columnName, value) {
+    const sheet = this.getSheet();
+    if (!sheet) {
+      throw new Error('SheetQuery: No sheet selected or sheet not found.');
+    }
+
+    const headings = this.getHeadings();
+    const columnIndex = headings.indexOf(columnName);
+
+    if (columnIndex === -1) 
+      throw new Error(`SheetQuery: Column '${columnName}' not found in sheet '${this.sheetName}'.`);
+
+    const sheetColumnIndex = columnIndex + 1;
+    const lastRow = sheet.getLastRow();
+    const headingRow = this.headingRow;
+    const targetRange = sheet.getRange(headingRow + 1, sheetColumnIndex, lastRow - headingRow, 1);
+    targetRange.setValue(value);
+    this.clearCache(); // Clear cache to reflect changes
+
+    return this;
+  }
+  /**
    * Clear cached values, headings, and flush all operations to sheet
    *
    * @return {SheetQueryBuilder}
    */
   clearCache() {
+    this.whereFn = null;
     this._sheetValues = null;
     this._sheetHeadings = [];
     SpreadsheetApp.flush();
