@@ -89,7 +89,7 @@ class SheetQueryBuilder {
    * @return {RowObject[]}
    */
   getRows() {
-    const sheetValues = this.getValues().slice(1, -1);
+    const sheetValues = this.getValues().slice(1);
     return this.whereFn ? sheetValues.filter(this.whereFn) : sheetValues;
   }
   /**
