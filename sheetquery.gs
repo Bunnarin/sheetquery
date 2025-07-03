@@ -219,15 +219,16 @@ class SheetQueryBuilder {
    */
   updateRow(row, updateFn) {
     updateFn = (typeof updateFn == 'object') ? update_fn(updateFn) : updateFn;
-    const updatedRow = updateFn(row) || row;
-    const rowMeta = updatedRow.__meta;
+    updateFn(row) || row;
+    const rowMeta = row.__meta;
     const headings = this.getHeadings();
-    delete updatedRow.__meta;
+    delete row.__meta;
     // Put new array data in order of headings in sheet
     const arrayValues = headings.map((heading) => {
-      const val = updatedRow[heading];
+      const val = row[heading];
       return val === undefined || val === null || val === false ? '' : val;
     });
+    row.__meta = rowMeta; //reattach to avoid edge case where we update the same row again
     const maxCols = Math.max(rowMeta.cols, arrayValues.length);
     const updateRowRange = this.getSheet().getRange(rowMeta.row, 1, 1, maxCols);
     const rangeData = updateRowRange.getValues()[0] || [];
@@ -255,7 +256,7 @@ class SheetQueryBuilder {
     updateFn(row);
     delete row.__meta;
 
-    // Iterate over the keys (column names) in the updatedRow object
+    // Iterate over the keys (column names) in the row object
     for (const columnName in row) {
       if (row[columnName] == oldRow[columnName])
         continue;
@@ -268,6 +269,7 @@ class SheetQueryBuilder {
       const valueToSet = (newValue === undefined || newValue === null || newValue === false) ? '' : newValue;
       targetCell.setValue(valueToSet);
     }
+    row.__meta = rowMeta; //reattach to avoid edge case where we update the same row again
     return this;
   }
   /**
