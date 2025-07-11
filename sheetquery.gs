@@ -164,19 +164,26 @@ class SheetQueryBuilder {
   insertRows(newRows) {
     const sheet = this.getSheet();
     const headings = this.getHeadings();
+    const allRowsToInsert = [];
+
     newRows.forEach((row) => {
-      if (!row) {
+      if (!row) 
         return;
-      }
+
       const rowValues = headings.map((heading) => {
         const val = row[heading];
         return val === undefined || val === null || val === false ? '' : val;
       });
-      // appendRow() will throw if array is empty, so we check to prevent that
-      if (rowValues && rowValues.length !== 0) {
-        sheet.appendRow(rowValues);
-      }
+      allRowsToInsert.push(rowValues);
     });
+
+    const startRow = sheet.getLastRow() + 1; 
+    const numRows = allRowsToInsert.length;
+    const numCols = headings.length; 
+    const targetRange = sheet.getRange(startRow, 1, numRows, numCols);
+    targetRange.setValues(allRowsToInsert);
+
+    this.clearCache(); // Clear cache to reflect changes in the sheet
     return this;
   }
   /**
